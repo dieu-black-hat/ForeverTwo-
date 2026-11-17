@@ -39,6 +39,8 @@
     video: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/>',
     ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
     reply: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/>',
+    volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+    volumeOff: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
   };
   function icon(name, size) {
     const span = document.createElement("span");
@@ -179,26 +181,69 @@
   });
   updateNotifyUI();
 
+  // ======================================================= message sound ==
+  // A short "pop" made in code (no sound file needed). Each person can mute it
+  // with the 🔊 button at the top of the sidebar; the choice is remembered.
+  const soundBtn = document.getElementById("sound-btn");
   let soundCtx = null;
-  function ding() {
-    // A short two-tone "ding" made in code, so no sound file is needed.
-    try {
-      soundCtx = soundCtx || new (window.AudioContext || window.webkitAudioContext)();
-      if (soundCtx.state === "suspended") soundCtx.resume();
-      const now = soundCtx.currentTime;
-      const gain = soundCtx.createGain();
-      gain.connect(soundCtx.destination);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-      const osc = soundCtx.createOscillator();
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.setValueAtTime(1320, now + 0.1);
-      osc.connect(gain);
-      osc.start(now);
-      osc.stop(now + 0.42);
-    } catch (e) { /* sound not allowed yet */ }
+  let lastDing = 0;
+
+  function soundOn() {
+    try { return localStorage.getItem("ft-sound") !== "off"; } catch (e) { return true; }
   }
+  function updateSoundBtn() {
+    if (!soundBtn) return;
+    const on = soundOn();
+    soundBtn.replaceChildren(icon(on ? "volume" : "volumeOff", 19));
+    soundBtn.title = on ? "Message sound is ON (click to mute)" : "Message sound is OFF (click to turn on)";
+    soundBtn.classList.toggle("muted", !on);
+  }
+  function getSoundCtx() {
+    soundCtx = soundCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (soundCtx.state === "suspended") soundCtx.resume();
+    return soundCtx;
+  }
+  function ding(force) {
+    if (!force && !soundOn()) return;
+    const nowMs = Date.now();
+    if (!force && nowMs - lastDing < 1200) return; // don't stack sounds when several messages arrive
+    lastDing = nowMs;
+    try {
+      const ctx = getSoundCtx();
+      const now = ctx.currentTime;
+      [[660, 0], [990, 0.12]].forEach(function (note) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(note[0], now + note[1]);
+        gain.gain.setValueAtTime(0.0001, now + note[1]);
+        gain.gain.exponentialRampToValueAtTime(0.3, now + note[1] + 0.015); // volume (0.0 – 1.0)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + note[1] + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + note[1]);
+        osc.stop(now + note[1] + 0.25);
+      });
+    } catch (e) { /* sound not available */ }
+  }
+  window.chatDing = ding;
+
+  // Browsers only allow sound after you've touched the page once, so we
+  // switch the sound system on at your first click, tap or key press.
+  function unlockSound() {
+    try { getSoundCtx(); } catch (e) { /* ignore */ }
+    ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { document.removeEventListener(ev, unlockSound); });
+  }
+  ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { document.addEventListener(ev, unlockSound); });
+
+  if (soundBtn) {
+    soundBtn.addEventListener("click", function () {
+      try { localStorage.setItem("ft-sound", soundOn() ? "off" : "on"); } catch (e) { /* ignore */ }
+      updateSoundBtn();
+      if (soundOn()) ding(true); // play a sample so you know it works
+    });
+  }
+  updateSoundBtn();
 
   // ======================================================= mobile sidebar ==
   document.querySelectorAll("[data-open-sidebar]").forEach(function (b) {
@@ -642,6 +687,7 @@
         seenId = data.seen_id || seenId;
         updateSeen();
         if (added) {
+          ding(); // sound for messages from the other person in this chat
           if (stick) scrollToBottom(true);
           else pill.hidden = false;
           if (document.hidden) { hiddenNew += added; unreadTotal += added; updateTitle(); }

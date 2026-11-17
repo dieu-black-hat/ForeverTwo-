@@ -6,7 +6,10 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <a class="brand" href="{% url 'home' %}"><span class="brand-mark">💬</span>{{ SITE_NAME }}</a>
-      <button class="icon-btn only-mobile" type="button" data-close-sidebar aria-label="Close menu">{% icon "x" %}</button>
+      <div class="sidebar-top-actions">
+        <button class="icon-btn" type="button" id="sound-btn" title="Message sound" aria-label="Turn message sound on or off">{% icon "volume" 19 %}</button>
+        <button class="icon-btn only-mobile" type="button" data-close-sidebar aria-label="Close menu">{% icon "x" %}</button>
+      </div>
     </div>
 
     <div class="sidebar-search">

@@ -41,7 +41,9 @@ your friends, classmates or team.
 - The admin can **reset a password**, **deactivate** or **delete** someone; everyone can
   **change their own password** (🔑 icon)
 - 🔔 **Desktop pop-up notifications** (like WhatsApp Web) for new messages and
-  incoming calls, with a notification sound
+  incoming calls
+- 🔊 **Message sound** for every new message (even in the chat you have open), with a
+  mute button at the top of the sidebar. Change the sound in `ding()` in `static/chat/app.js`
 - Django **admin panel** at `/admin/` for advanced management
 - Mobile-friendly design with a slide-out menu; automatic **dark mode**
 - Security: CSRF protection, escaped messages, private rooms and files checked on

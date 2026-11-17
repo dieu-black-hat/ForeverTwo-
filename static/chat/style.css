@@ -589,3 +589,8 @@ h1, h2 { margin: 0; line-height: 1.25; }
   .msg .msg-actions { left: auto; right: 0; top: -14px; transform: none; }
   .msg.mine .msg-actions { right: auto; left: 0; }
 }
+
+/* message sound toggle */
+.sidebar-top-actions { display: flex; align-items: center; gap: .2rem; }
+#sound-btn { color: var(--sidebar-text); }
+#sound-btn.muted { color: var(--sidebar-muted); opacity: .7; }
