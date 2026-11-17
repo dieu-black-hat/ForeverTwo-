@@ -22,6 +22,7 @@ urlpatterns = [
     path("api/rooms/<slug:slug>/send/", views.api_send, name="api_send"),
     path("api/rooms/<slug:slug>/upload/", views.api_upload, name="api_upload"),
     path("api/rooms/<slug:slug>/typing/", views.api_typing, name="api_typing"),
+    path("api/rooms/<slug:slug>/screenshot/", views.api_screenshot, name="api_screenshot"),
     path("api/messages/<int:message_id>/delete/", views.api_delete, name="api_delete"),
     path("api/sidebar/", views.api_sidebar, name="api_sidebar"),
     # JSON API used by call.js

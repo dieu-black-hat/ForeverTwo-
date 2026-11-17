@@ -132,7 +132,7 @@ def manage_users(request):
         user.is_staff = form.cleaned_data["is_admin"]
         user.save()
         Profile.objects.update_or_create(
-            user=user, defaults={"must_change_password": True, "created_by": request.user}
+            user=user, defaults={"must_change_password": False, "created_by": request.user}
         )
         request.session["new_credentials"] = {"username": user.username, "password": password, "action": "created"}
         flash.success(request, f"Account for {user.username} created.")
@@ -148,7 +148,7 @@ def manage_users(request):
             f"🔗 Link: {login_url}\n"
             f"👤 Username: {credentials['username']}\n"
             f"🔑 Password: {credentials['password']}\n\n"
-            f"When you log in for the first time you will choose your own password."
+            f"You can change your password anytime with the 🔑 key icon."
         )
 
     online = Presence.online_user_ids()
@@ -160,7 +160,7 @@ def manage_users(request):
                 "user": u,
                 "color": avatar_color(u.username),
                 "online": u.pk in online,
-                "pending": bool(profile and profile.must_change_password),
+                "pending": u.last_login is None,
                 "protected": u.pk == request.user.pk or (u.is_superuser and not request.user.is_superuser),
             }
         )
@@ -186,7 +186,7 @@ def user_action(request, user_id):
         password = generate_password()
         target.set_password(password)
         target.save()
-        Profile.objects.update_or_create(user=target, defaults={"must_change_password": True})
+        Profile.objects.update_or_create(user=target, defaults={"must_change_password": False})
         request.session["new_credentials"] = {"username": target.username, "password": password, "action": "reset"}
         flash.success(request, f"New password created for {target.username}.")
     elif action == "deactivate":
@@ -252,6 +252,7 @@ def room_view(request, slug):
                 "sendUrl": reverse("api_send", args=[room.slug]),
                 "uploadUrl": reverse("api_upload", args=[room.slug]),
                 "typingUrl": reverse("api_typing", args=[room.slug]),
+                "screenshotUrl": reverse("api_screenshot", args=[room.slug]),
                 "deleteUrl": reverse("api_delete", args=[0]),
                 "seenId": _seen_id(room, request.user),
                 "maxLength": settings.CHAT_MAX_MESSAGE_LENGTH,
@@ -418,6 +419,26 @@ def api_upload(request, slug):
     message.save()
     _after_new_message(request.user, room, message)
     return JsonResponse({"message": message.to_dict(request.user)}, status=201)
+
+
+@login_required
+@require_POST
+def api_screenshot(request, slug):
+    """
+    The browser noticed a screenshot key (e.g. Print Screen). We post a small
+    notice in the chat so everyone knows. At most one notice per 30 seconds.
+    """
+    room = _get_room_or_404(request.user, slug)
+    recent = room.messages.filter(
+        user=request.user, kind=Message.ALERT, created_at__gte=timezone.now() - timezone.timedelta(seconds=30)
+    ).exists()
+    if recent:
+        return JsonResponse({"ok": True, "message": None})
+    message = Message.objects.create(
+        room=room, user=request.user, kind=Message.ALERT, content=f"{request.user.username} took a screenshot"
+    )
+    ReadMarker.mark(request.user, room, message.id)
+    return JsonResponse({"ok": True, "message": message.to_dict(request.user)}, status=201)
 
 
 @login_required

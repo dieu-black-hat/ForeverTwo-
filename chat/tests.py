@@ -217,7 +217,7 @@ class AdminAccountTests(TestCase):
         self.assertEqual(self.admin.username, "Hustler")
         self.assertTrue(self.admin.check_password("Hustler@12345"))
 
-    def test_admin_creates_user_who_must_change_password(self):
+    def test_admin_creates_user_who_goes_straight_to_chat(self):
         res = self.client.post(reverse("manage_users"), {"username": "grace", "password": ""})
         self.assertRedirects(res, reverse("manage_users"), fetch_redirect_response=False)
         page = self.client.get(reverse("manage_users"))
@@ -230,15 +230,16 @@ class AdminAccountTests(TestCase):
 
         self.client.logout()
         self.assertTrue(self.client.login(username="grace", password=creds["password"]))
-        self.assertRedirects(self.client.get(reverse("home")), reverse("change_password"))
-        self.assertEqual(self.client.get(reverse("api_sidebar")).status_code, 403)
+        # no password page: home leads straight to the chat with the admin
+        res = self.client.get(reverse("home"), follow=True)
+        self.assertEqual(res.resolver_match.url_name, "room")
+        self.assertEqual(self.client.get(reverse("api_sidebar")).status_code, 200)
+        # changing the password is still possible, by choice
         res = self.client.post(
             reverse("change_password"),
             {"old_password": creds["password"], "new_password1": "Grace-own-pw-2026", "new_password2": "Grace-own-pw-2026"},
         )
-        self.assertRedirects(res, reverse("home"), target_status_code=302)
-        self.assertFalse(Profile.objects.get(user__username="grace").must_change_password)
-        self.assertEqual(self.client.get(reverse("api_sidebar")).status_code, 200)
+        self.assertEqual(res.status_code, 302)
 
     def test_duplicate_and_weak_passwords_rejected(self):
         User.objects.create_user("bob", password="x-strong-pass-1")
@@ -409,3 +410,33 @@ class StickerTests(TestCase):
     def test_picker_data_on_page(self):
         page = self.client.get(reverse("room", args=[self.dm.slug]))
         self.assertEqual(len(page.context["chat_config"]["stickers"]), 26)
+
+
+# ---------------------------------------------------- screenshot alerts ---
+class ScreenshotAlertTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.get(username=dj_settings.DEFAULT_ADMIN_USERNAME)
+        self.grace = User.objects.create_user("grace", password="x-strong-pass-1")
+        self.client.force_login(self.grace)
+        self.client.get(reverse("direct_message", args=[self.admin.username]))
+        self.dm = Room.objects.get(is_direct=True)
+
+    def test_alert_posted_once_per_30_seconds(self):
+        url = reverse("api_screenshot", args=[self.dm.slug])
+        first = self.client.post(url)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.json()["message"]["kind"], "alert")
+        self.assertEqual(first.json()["message"]["content"], "grace took a screenshot")
+        second = self.client.post(url).json()
+        self.assertIsNone(second["message"])  # throttled
+        self.assertEqual(Message.objects.filter(kind="alert").count(), 1)
+        self.assertEqual(Message.objects.get(kind="alert").preview_text(), "📸 grace took a screenshot")
+
+    def test_admin_sees_alert(self):
+        self.client.post(reverse("api_screenshot", args=[self.dm.slug]))
+        self.client.force_login(self.admin)
+        data = self.client.get(reverse("api_messages", args=[self.dm.slug]), {"after": 0}).json()
+        self.assertEqual([m["kind"] for m in data["messages"]], ["alert"])
+
+    def test_cannot_alert_in_foreign_room(self):
+        self.assertEqual(self.client.post(reverse("api_screenshot", args=["general"])).status_code, 404)

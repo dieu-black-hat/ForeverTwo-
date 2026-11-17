@@ -30,7 +30,10 @@
   {% endif %}
 </header>
 
-<section class="messages" id="messages" aria-live="polite">
+<div class="privacy-veil" id="privacy-veil" hidden>
+  <div>{% icon "key" 28 %}<p><strong>Hidden for privacy</strong><br>Click here to show the chat again.</p></div>
+</div>
+<section class="messages protected" id="messages" aria-live="polite">
   <div class="empty-state" id="empty-state" hidden>
     <div class="empty-emoji">👋</div>
     <h2>No messages yet</h2>
@@ -94,7 +97,6 @@
 <div class="lightbox" id="lightbox" hidden>
   <div class="lightbox-bar">
     <span id="lightbox-name"></span>
-    <a class="icon-btn" id="lightbox-download" href="#" title="Download" aria-label="Download">{% icon "download" %}</a>
     <button class="icon-btn" type="button" id="lightbox-close" title="Close" aria-label="Close">{% icon "x" %}</button>
   </div>
   <img id="lightbox-img" alt="">

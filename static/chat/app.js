@@ -39,6 +39,7 @@
     video: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/>',
     ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
     reply: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/>',
+    camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
     volume: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
     volumeOff: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>',
   };
@@ -493,6 +494,7 @@
       bubble.classList.add("media-bubble");
       const img = document.createElement("img");
       img.className = "media-img";
+      img.draggable = false;
       img.src = m.file_url;
       img.alt = m.file_name || "Photo";
       img.addEventListener("load", function () { img.classList.add("loaded"); keepPinned(); });
@@ -506,6 +508,8 @@
       video.controls = true;
       video.preload = "metadata";
       video.playsInline = true;
+      video.setAttribute("controlsList", "nodownload noremoteplayback");
+      video.disablePictureInPicture = true;
       video.addEventListener("loadedmetadata", keepPinned);
       bubble.appendChild(video);
     } else if (m.kind === "file") {
@@ -588,6 +592,16 @@
       lastMsg = null;
     }
 
+    if (m.kind === "alert") {
+      const row = el("div", "alert-log");
+      row.dataset.id = m.id;
+      row.append(icon("camera", 15), el("span", null, m.is_mine ? "You took a screenshot" : m.content), el("time", null, timeLabel(date)));
+      list.appendChild(row);
+      rows.set(m.id, row);
+      lastMsg = null;
+      lastId = Math.max(lastId, m.id);
+      return true;
+    }
     if (m.kind === "call") {
       const row = el("div", "call-log" + (/^Missed|declined|No answer/i.test(m.content) ? " missed" : ""));
       row.dataset.id = m.id;
@@ -727,6 +741,78 @@
     scrollToBottom(true);
   }
   window.chatMessageArrived = messageArrived; // used by call.js for call records
+
+  // ------------------------------------------------- screenshot protection --
+  // A website cannot completely block screenshots (they are taken by Windows,
+  // Android or iOS, outside the browser). So we make them hard and traceable:
+  //  1. Print Screen key -> chat blurs, clipboard wiped, everyone is told.
+  //  2. Leaving the window -> chat blurs (beats most snipping tools).
+  //  3. A faint watermark with YOUR name -> any screenshot shows who took it.
+  //  4. No copying text, saving photos, or printing the page.
+  const veil = document.getElementById("privacy-veil");
+  const main = document.querySelector(".main");
+
+  function setPrivacy(on) {
+    document.body.classList.toggle("privacy-on", on);
+    veil.hidden = !on;
+  }
+  window.addEventListener("blur", function () { setPrivacy(true); });
+  window.addEventListener("focus", function () { setPrivacy(false); });
+  document.addEventListener("visibilitychange", function () { if (document.hidden) setPrivacy(true); });
+  veil.addEventListener("click", function () { setPrivacy(false); });
+
+  let lastShotReport = 0;
+  let lastShotSeen = 0;
+  async function screenshotAttempt() {
+    if (Date.now() - lastShotSeen < 1500) return; // key down + key up = one attempt
+    lastShotSeen = Date.now();
+    setPrivacy(true);
+    setTimeout(function () { if (document.hasFocus()) setPrivacy(false); }, 1500);
+    // Replace whatever the screenshot put on the clipboard (works in most desktop browsers).
+    try { await navigator.clipboard.writeText("Screenshots are not allowed in ForeverTwo."); } catch (e) { /* not allowed */ }
+    toast("📸 Screenshots are not allowed. The other person has been notified.", "error");
+    if (Date.now() - lastShotReport < 30000) return;
+    lastShotReport = Date.now();
+    try {
+      const res = await fetch(chat.screenshotUrl, { method: "POST", headers: { "X-CSRFToken": csrf() } });
+      const data = await res.json();
+      if (data.message) messageArrived(data.message);
+    } catch (e) { /* offline */ }
+  }
+  function isScreenshotKey(e) {
+    const k = (e.key || "").toLowerCase();
+    if (k === "printscreen" || e.code === "PrintScreen") return true;                    // Windows / Linux
+    if (e.metaKey && e.shiftKey && ["3", "4", "5", "6"].indexOf(k) !== -1) return true;    // Mac
+    if (e.metaKey && e.shiftKey && k === "s") return true;                                // Windows + Shift + S
+    return false;
+  }
+  document.addEventListener("keyup", function (e) { if (isScreenshotKey(e)) screenshotAttempt(); });
+  document.addEventListener("keydown", function (e) {
+    if (isScreenshotKey(e)) screenshotAttempt();
+    if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {  // printing
+      e.preventDefault();
+      toast("Printing chats is disabled.", "error");
+    }
+  });
+
+  // No copying, right-click saving or dragging out of the chat.
+  list.addEventListener("copy", function (e) { e.preventDefault(); toast("Copying messages is disabled.", "info"); });
+  list.addEventListener("cut", function (e) { e.preventDefault(); });
+  list.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  list.addEventListener("dragstart", function (e) { e.preventDefault(); });
+
+  // Watermark: your username + date, repeated faintly over the chat.
+  (function addWatermark() {
+    const label = (chat.me + " · " + new Date().toLocaleDateString()).replace(/[<&>"]/g, "");
+    const tile =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="150">' +
+      '<text x="20" y="90" transform="rotate(-20 130 75)" font-family="Arial, sans-serif" font-size="15" ' +
+      'font-weight="700" fill="rgb(120,120,140)" fill-opacity="0.16">' + label + "</text></svg>";
+    const mark = el("div", "watermark");
+    mark.setAttribute("aria-hidden", "true");
+    mark.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tile) + '")';
+    main.appendChild(mark);
+  })();
 
   // -------------------------------------------------------------- replies --
   const replyBar = document.getElementById("reply-bar");
@@ -1055,8 +1141,7 @@
     });
   }
 
-  // Drag & drop anywhere on the chat.
-  const main = document.querySelector(".main");
+  // Drag & drop anywhere on the chat (uses "main" from the protection section).
   let dragDepth = 0;
   main.addEventListener("dragenter", function (e) {
     if (!e.dataTransfer || Array.from(e.dataTransfer.types).indexOf("Files") === -1) return;
@@ -1089,12 +1174,13 @@
   function openLightbox(m) {
     lightboxImg.src = m.file_url;
     document.getElementById("lightbox-name").textContent = m.file_name || "";
-    document.getElementById("lightbox-download").href = m.file_url + "?download=1";
     lightbox.hidden = false;
   }
   function closeLightbox() { lightbox.hidden = true; lightboxImg.removeAttribute("src"); }
   document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
   lightbox.addEventListener("click", function (e) { if (e.target === lightbox) closeLightbox(); });
+  lightbox.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  lightboxImg.draggable = false;
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (!lightbox.hidden) closeLightbox();

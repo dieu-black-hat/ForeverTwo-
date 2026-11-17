@@ -32,7 +32,7 @@ class CreateUserForm(forms.Form):
         required=False,
         label="Temporary password",
         help_text="Leave empty and a strong password is created for you. "
-                  "The person will choose their own password at first login.",
+                  "They can change it later with the 🔑 key icon.",
         widget=forms.TextInput(attrs={"placeholder": "Leave empty to generate one", "autocomplete": "off"}),
     )
     is_admin = forms.BooleanField(required=False, label="Make this person an admin too")

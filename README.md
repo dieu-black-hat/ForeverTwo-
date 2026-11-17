@@ -15,6 +15,9 @@ your friends, classmates or team.
   it. The reply shows a quote; tap the quote to jump to the original message
 - 🎨 **Stickers & emoji**: tap 😊 in the message box. 26 original stickers (faces,
   hugs 🤗, and words like *Muraho!*, *Murakoze!*, *Ndagukunda*), plus an emoji tab
+- 📸 **Screenshot protection**: alerts when someone presses Print Screen ("grace took
+  a screenshot"), the chat blurs when you leave the window, a faint watermark with the
+  viewer's name, and no copying, photo saving or printing (see section 7)
 - **Delete for everyone** on your own messages
 - Unread badges, browser-tab unread count, and green **online** dots
 - Clickable links, date separators and grouping of back-to-back messages
@@ -36,7 +39,7 @@ your friends, classmates or team.
 **Everything else**
 - **Invite-only accounts**: no public sign-up. The admin (**Hustler**) creates every
   account on the **Manage users** page, then sends the login details by WhatsApp or
-  copy-paste. New users must choose their own password at first login.
+  copy-paste. New users log in and go straight to their chat.
 - **Private by design**: normal users only see the admin(s) and themselves, and can
   only chat with an admin. They never see other users or group rooms. Admins see
   everyone and can use the rooms.
@@ -168,7 +171,7 @@ notifications are allowed.)
 1. As Hustler, click **Manage users** → create a user (for example `grace`) and
    copy the password it shows.
 2. Open a **private/incognito window** (Ctrl+Shift+N), go to the same address
-   and log in as `grace`. You'll be asked to choose a new password.
+   and log in as `grace`. You land straight in the chat.
 3. Chat between the two windows.
 
 > **What did those commands do?**
@@ -287,8 +290,8 @@ cd ~/ForeverTwo && git pull && bash pythonanywhere_setup.sh
 2. Type a username. Leave the password empty and a strong one is generated for you.
 3. A green card shows the login details **once**. Click **Send on WhatsApp**
    or **Copy message** and send it to your friend.
-4. Your friend opens the link, logs in, and must choose their own password.
-   Even you won't know their new password.
+4. Your friend opens the link, logs in and goes **straight to their chat with
+   you**. They can change their password anytime with the 🔑 icon.
 
 In the list of users you can also **Reset password** (if someone forgets it),
 **Deactivate** an account (they can't log in any more, but their messages stay), or
@@ -343,6 +346,26 @@ jump straight to that chat.
   at the top). Keep the chat page open: closing or reloading the page ends the call.
 - Size limits (change them in `.env`): photos 10 MB (`CHAT_MAX_IMAGE_MB`), videos
   100 MB (`CHAT_MAX_VIDEO_MB`), other files 25 MB (`CHAT_MAX_FILE_MB`).
+
+---
+
+## 📸 7. Screenshot protection: what it can and can't do
+
+**Important truth:** no website can fully block screenshots. Screenshots are taken
+by Windows, Android or iPhone, outside the browser. So ForeverTwo makes them
+**hard and traceable** instead:
+
+| Protection | What happens |
+|---|---|
+| Screenshot alert | Pressing **Print Screen** (or Win+Shift+S / Mac Cmd+Shift+3/4/5) blurs the chat, replaces the clipboard image with a text, and posts "📸 *name* took a screenshot" in the chat |
+| Privacy blur | When you switch to another window or app, the messages blur. Click the "Hidden for privacy" card to show them again |
+| Watermark | Each person sees their **own username and the date** faintly across the chat, so a screenshot shows who took it |
+| No copy / save / print | Message text can't be selected or copied, photos can't be right-clicked or long-pressed to save, videos have no download button, and printing shows a blank notice |
+
+**Limits:** phone screenshots (power + volume buttons) can't be detected by any
+website, and someone can always photograph the screen with another phone. The
+watermark is the protection that still works in those cases. All of this lives
+in the "screenshot protection" section of `static/chat/app.js`.
 
 ---
 
