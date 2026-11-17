@@ -10,8 +10,9 @@ User = get_user_model()
 
 class ChatTests(TestCase):
     def setUp(self):
-        self.alice = User.objects.create_user("alice", password="pass-12345-x")
-        self.bob = User.objects.create_user("bob", password="pass-12345-x")
+        # Group rooms are for admins, so these two are admins.
+        self.alice = User.objects.create_user("alice", password="pass-12345-x", is_staff=True)
+        self.bob = User.objects.create_user("bob", password="pass-12345-x", is_staff=True)
         self.room = Room.objects.create(name="Lobby", slug="lobby")
 
     def test_login_required(self):
@@ -110,9 +111,9 @@ class MediaAndCallTests(TestCase):
         shutil.rmtree(TEMP_MEDIA, ignore_errors=True)
 
     def setUp(self):
-        self.alice = User.objects.create_user("alice", password="pass-12345-x")
-        self.bob = User.objects.create_user("bob", password="pass-12345-x")
-        self.eve = User.objects.create_user("eve", password="pass-12345-x")
+        self.alice = User.objects.create_user("alice", password="pass-12345-x", is_staff=True)  # admin
+        self.bob = User.objects.create_user("bob", password="pass-12345-x")  # normal user
+        self.eve = User.objects.create_user("eve", password="pass-12345-x")  # outsider
         self.dm = Room.objects.create(name="DM", slug="dm-1-2", is_private=True, is_direct=True)
         self.dm.members.add(self.alice, self.bob)
         self.client.login(username="alice", password="pass-12345-x")
@@ -276,3 +277,100 @@ class AdminAccountTests(TestCase):
         latest = self.client.get(reverse("api_sidebar"), {"since": cursor}).json()["latest"]
         self.assertEqual(len(latest), 1)
         self.assertEqual((latest[0]["sender"], latest[0]["preview"]), ("bob", "Are you coming tonight?"))
+
+
+
+# ------------------------------------------------------------- privacy ---
+class PrivacyTests(TestCase):
+    """Normal users only see the admin; the admin sees (and can delete) everyone."""
+
+    def setUp(self):
+        self.admin = User.objects.get(username=dj_settings.DEFAULT_ADMIN_USERNAME)
+        self.grace = User.objects.create_user("grace", password="x-strong-pass-1")
+        self.eric = User.objects.create_user("eric", password="x-strong-pass-1")
+
+    def login(self, user):
+        self.client.force_login(user)
+
+    def test_normal_user_sees_only_admin(self):
+        self.login(self.grace)
+        res = self.client.get(reverse("home"))
+        self.assertRedirects(res, reverse("direct_message", args=[self.admin.username]), target_status_code=302)
+        page = self.client.get(reverse("direct_message", args=[self.admin.username]), follow=True)
+        names = [p["user"].username for p in page.context["people"]]
+        self.assertEqual(names, [self.admin.username])
+        self.assertNotContains(page, "eric")
+        self.assertNotContains(page, "General")
+
+    def test_normal_user_cannot_reach_others(self):
+        self.login(self.grace)
+        self.assertEqual(self.client.get(reverse("direct_message", args=["eric"])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("room", args=["general"])).status_code, 404)
+        self.assertEqual(self.client.post(reverse("api_send", args=["general"]), {"content": "hi"}).status_code, 404)
+        self.assertEqual(self.client.get(reverse("create_room")).status_code, 302)
+        # an old DM between two normal users is also blocked
+        old = Room.objects.create(name="old", slug="dm-old", is_private=True, is_direct=True)
+        old.members.add(self.grace, self.eric)
+        self.assertEqual(self.client.get(reverse("room", args=["dm-old"])).status_code, 404)
+        data = self.client.get(reverse("api_sidebar")).json()
+        self.assertNotIn("dm-old", [r["slug"] for r in data["rooms"]])
+        self.assertNotIn("eric", data["online"])
+
+    def test_admin_sees_everyone(self):
+        self.login(self.admin)
+        page = self.client.get(reverse("room", args=["general"]))
+        names = {p["user"].username for p in page.context["people"]}
+        self.assertEqual(names, {"grace", "eric"})
+
+    def test_admin_deletes_user(self):
+        self.login(self.grace)
+        self.client.get(reverse("direct_message", args=[self.admin.username]))
+        dm = Room.objects.get(is_direct=True)
+        self.client.post(reverse("api_send", args=[dm.slug]), {"content": "hello admin"})
+        self.login(self.admin)
+        res = self.client.post(reverse("user_action", args=[self.grace.pk]), {"action": "delete"})
+        self.assertRedirects(res, reverse("manage_users"))
+        self.assertFalse(User.objects.filter(username="grace").exists())
+        self.assertFalse(Room.objects.filter(pk=dm.pk).exists())
+        # normal users can't delete anyone
+        self.login(self.eric)
+        self.client.post(reverse("user_action", args=[self.admin.pk]), {"action": "delete"})
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+
+# -------------------------------------------------------------- replies ---
+class ReplyTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.get(username=dj_settings.DEFAULT_ADMIN_USERNAME)
+        self.grace = User.objects.create_user("grace", password="x-strong-pass-1")
+        self.client.force_login(self.grace)
+        self.client.get(reverse("direct_message", args=[self.admin.username]))
+        self.dm = Room.objects.get(is_direct=True)
+
+    def send(self, content, **extra):
+        return self.client.post(reverse("api_send", args=[self.dm.slug]), {"content": content, **extra}).json()
+
+    def test_reply_includes_quote(self):
+        first = self.send("Are we meeting at 7?")["message"]
+        self.client.force_login(self.admin)
+        reply = self.send("Yes, at the library", reply_to=first["id"])["message"]
+        self.assertEqual(reply["reply"]["id"], first["id"])
+        self.assertEqual(reply["reply"]["user"], "grace")
+        self.assertEqual(reply["reply"]["text"], "Are we meeting at 7?")
+        # also visible when polling
+        polled = self.client.get(reverse("api_messages", args=[self.dm.slug]), {"after": first["id"]}).json()
+        self.assertEqual(polled["messages"][0]["reply"]["id"], first["id"])
+
+    def test_cannot_reply_to_message_in_another_room(self):
+        other = Room.objects.get(slug="general")
+        foreign = Message.objects.create(room=other, user=self.admin, content="secret")
+        reply = self.send("hi", reply_to=foreign.id)["message"]
+        self.assertNotIn("reply", reply)
+
+    def test_deleted_original_shows_placeholder(self):
+        first = self.send("oops")["message"]
+        reply = self.send("answer", reply_to=first["id"])["message"]
+        self.client.post(reverse("api_delete", args=[first["id"]]))
+        data = self.client.get(reverse("api_messages", args=[self.dm.slug]), {"after": 0}).json()
+        quoted = [m for m in data["messages"] if m["id"] == reply["id"]][0]["reply"]
+        self.assertEqual(quoted["text"], "This message was deleted")

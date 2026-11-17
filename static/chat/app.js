@@ -38,6 +38,7 @@
     phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
     video: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/>',
     ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+    reply: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/>',
   };
   function icon(name, size) {
     const span = document.createElement("span");
@@ -323,6 +324,7 @@
   const csrf = function () { return getCookie("csrftoken"); };
 
   const rows = new Map(); // message id → row element
+  const messagesById = new Map(); // message id → message data (used for replies)
   let lastId = 0;
   let lastMsg = null;
   let lastDay = null;
@@ -469,15 +471,48 @@
     return bubble;
   }
 
-  function addDeleteButton(row, m) {
-    if (!m.is_mine || m.kind === "deleted" || m.kind === "call") return;
-    const del = el("button", "msg-action");
-    del.type = "button";
-    del.title = "Delete for everyone";
-    del.setAttribute("aria-label", "Delete message");
-    del.appendChild(icon("trash", 15));
-    del.addEventListener("click", function () { deleteMessage(m.id); });
-    row.querySelector(".msg-body").appendChild(del);
+  // Small buttons next to a message: Reply (everyone) and Delete (your own).
+  function addActions(row, m) {
+    if (m.kind === "deleted" || m.kind === "call") return;
+    const box = el("div", "msg-actions");
+    const reply = el("button", "msg-action");
+    reply.type = "button";
+    reply.title = "Reply";
+    reply.setAttribute("aria-label", "Reply to this message");
+    reply.appendChild(icon("reply", 15));
+    reply.addEventListener("click", function () { startReply(m); });
+    box.appendChild(reply);
+    if (m.is_mine) {
+      const del = el("button", "msg-action danger");
+      del.type = "button";
+      del.title = "Delete for everyone";
+      del.setAttribute("aria-label", "Delete message");
+      del.appendChild(icon("trash", 15));
+      del.addEventListener("click", function () { deleteMessage(m.id); });
+      box.appendChild(del);
+    }
+    row.querySelector(".msg-body").appendChild(box);
+  }
+
+  // The little quoted box at the top of a reply. Click it to jump to the original.
+  function buildQuote(reply) {
+    const q = el("button", "reply-quote");
+    q.type = "button";
+    q.style.borderLeftColor = reply.color || "var(--accent)";
+    const who = el("strong", null, reply.user === chat.me ? "You" : reply.user);
+    who.style.color = reply.color || "inherit";
+    q.append(who, el("span", null, reply.text));
+    q.addEventListener("click", function () { jumpTo(reply.id); });
+    return q;
+  }
+
+  function jumpTo(id) {
+    const row = rows.get(id);
+    if (!row) { toast("That message is too old to show here.", "info"); return; }
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.remove("flash");
+    void row.offsetWidth; // restart the animation
+    row.classList.add("flash");
   }
 
   function addMessage(m) {
@@ -521,9 +556,12 @@
       meta.appendChild(el("time", null, timeLabel(date)));
       body.appendChild(meta);
     }
-    body.appendChild(buildBubble(m));
+    const bubble = buildBubble(m);
+    if (m.reply && m.kind !== "deleted") bubble.prepend(buildQuote(m.reply));
+    body.appendChild(bubble);
     row.appendChild(body);
-    addDeleteButton(row, m);
+    addActions(row, m);
+    messagesById.set(m.id, m);
 
     list.appendChild(row);
     rows.set(m.id, row);
@@ -539,8 +577,9 @@
     row.classList.add("is-deleted");
     const old = row.querySelector(".bubble");
     if (old) old.replaceWith(buildBubble({ kind: "deleted", is_mine: row.classList.contains("mine"), created_at: new Date().toISOString() }));
-    const action = row.querySelector(".msg-action");
-    if (action) action.remove();
+    const actions = row.querySelector(".msg-actions");
+    if (actions) actions.remove();
+    if (replyTo && replyTo.id === id) cancelReply();
   }
 
   function updateSeen() {
@@ -629,6 +668,40 @@
   }
   window.chatMessageArrived = messageArrived; // used by call.js for call records
 
+  // -------------------------------------------------------------- replies --
+  const replyBar = document.getElementById("reply-bar");
+  const replyName = document.getElementById("reply-name");
+  const replyText = document.getElementById("reply-text");
+  let replyTo = null; // the message you are answering
+
+  function previewOf(m) {
+    const labels = { image: "📷 Photo", video: "🎬 Video", voice: "🎤 Voice note", file: "📄 " + (m.file_name || "File") };
+    if (labels[m.kind]) return m.content ? labels[m.kind] + ": " + m.content : labels[m.kind];
+    return m.content;
+  }
+
+  function startReply(m) {
+    replyTo = { id: m.id, user: m.user };
+    replyName.textContent = m.is_mine ? "yourself" : m.user;
+    replyText.textContent = previewOf(m);
+    replyBar.hidden = false;
+    list.querySelectorAll(".msg.show-actions").forEach(function (r) { r.classList.remove("show-actions"); });
+    input.focus();
+  }
+  function cancelReply() {
+    replyTo = null;
+    replyBar.hidden = true;
+  }
+  document.getElementById("reply-cancel").addEventListener("click", cancelReply);
+
+  // Double-click a message to reply quickly.
+  list.addEventListener("dblclick", function (e) {
+    const row = e.target.closest(".msg");
+    if (!row || row.classList.contains("pending") || e.target.closest("a, video, .voice-player, .msg-actions")) return;
+    const m = messagesById.get(Number(row.dataset.id));
+    if (m && !row.classList.contains("is-deleted")) startReply(m);
+  });
+
   // ---------------------------------------------------------- send text --
   function autoresize() {
     input.style.height = "auto";
@@ -650,12 +723,14 @@
     try {
       const body = new FormData();
       body.append("content", content);
+      if (replyTo) body.append("reply_to", String(replyTo.id));
       const res = await fetch(chat.sendUrl, { method: "POST", body: body, headers: { "X-CSRFToken": csrf() } });
       const data = await res.json().catch(function () { return {}; });
       if (res.ok) {
         messageArrived(data.message);
         input.value = "";
         autoresize();
+        cancelReply();
       } else {
         toast(data.error || "Could not send the message. Please try again.", "error");
       }
@@ -681,9 +756,11 @@
 
   // Touch screens: tap a message to show its delete button.
   list.addEventListener("click", function (e) {
-    const row = e.target.closest(".msg.mine");
+    const row = e.target.closest(".msg");
     list.querySelectorAll(".msg.show-actions").forEach(function (r) { if (r !== row) r.classList.remove("show-actions"); });
-    if (row && !e.target.closest("a, button, video, img")) row.classList.toggle("show-actions");
+    if (row && !row.classList.contains("pending") && !e.target.closest("a, button, video, img")) {
+      row.classList.toggle("show-actions");
+    }
   });
 
   // ============================================== photo / video / files ==
@@ -776,8 +853,10 @@
     modal.hidden = true;
     caption.value = "";
     fileInput.value = "";
+    const replyId = replyTo ? replyTo.id : null;
+    cancelReply();
     for (let i = 0; i < items.length; i++) {
-      await uploadFile(items[i].file, { caption: i === 0 ? text : "" });
+      await uploadFile(items[i].file, { caption: i === 0 ? text : "", replyTo: i === 0 ? replyId : null });
       URL.revokeObjectURL(items[i].url);
     }
   });
@@ -804,6 +883,7 @@
       const fd = new FormData();
       fd.append("file", file, file.name || "file");
       if (opts.caption) fd.append("caption", opts.caption);
+      if (opts.replyTo) fd.append("reply_to", String(opts.replyTo));
       if (opts.voice) { fd.append("voice", "1"); fd.append("duration", String(opts.duration || 0)); }
 
       const xhr = new XMLHttpRequest();
@@ -882,6 +962,7 @@
     if (e.key !== "Escape") return;
     if (!lightbox.hidden) closeLightbox();
     else if (!modal.hidden) closeUpload();
+    else if (replyTo) cancelReply();
   });
 
   // ========================================================= voice notes ==
@@ -949,7 +1030,9 @@
     if (duration < 1) { toast("Voice note too short — hold on a little longer.", "info"); return; }
     const ext = type.indexOf("mp4") !== -1 ? "m4a" : type.indexOf("ogg") !== -1 ? "ogg" : "webm";
     const file = new File(recChunks, "voice-note." + ext, { type: type.split(";")[0] });
-    await uploadFile(file, { voice: true, duration: duration });
+    const replyId = replyTo ? replyTo.id : null;
+    cancelReply();
+    await uploadFile(file, { voice: true, duration: duration, replyTo: replyId });
   }
 
   voiceBtn.addEventListener("click", startRecording);

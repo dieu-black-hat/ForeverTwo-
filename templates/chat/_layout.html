@@ -26,6 +26,7 @@
         {% icon "users" 18 %}<span class="nav-name">Manage users</span>
       </a>
       {% endif %}
+      {% if user.is_staff %}
       <div class="section">
         <div class="section-head">
           <span>Rooms</span>
@@ -45,6 +46,8 @@
         </ul>
       </div>
 
+      {% endif %}
+
       <div class="section">
         <div class="section-head"><span>Direct messages</span></div>
         <ul class="nav-list" id="dm-list">
@@ -54,13 +57,13 @@
               <span class="nav-name">{{ d.name }}</span><span class="badge" hidden></span>
             </a></li>
           {% empty %}
-            <li class="nav-empty" id="dm-empty">No conversations yet. Pick someone below 👇</li>
+            <li class="nav-empty" id="dm-empty">{% if user.is_staff %}No conversations yet. Pick someone below 👇{% else %}No messages yet. Say hello to the admin below 👇{% endif %}</li>
           {% endfor %}
         </ul>
       </div>
 
       <div class="section">
-        <div class="section-head"><span>People</span><span class="count">{{ people|length }}</span></div>
+        <div class="section-head"><span>{% if user.is_staff %}People{% else %}Admin{% endif %}</span><span class="count">{{ people|length }}</span></div>
         <ul class="nav-list" id="people-list">
           {% for p in people %}
             <li><a class="nav-item" href="{% url 'direct_message' p.user.username %}" data-user="{{ p.user.username }}" data-filter="{{ p.user.username|lower }}" title="Message {{ p.user.username }}">
@@ -68,7 +71,7 @@
               <span class="nav-name">{{ p.user.username }}</span>
             </a></li>
           {% empty %}
-            <li class="nav-empty">Nobody else yet — share the link with friends!</li>
+            <li class="nav-empty">{% if user.is_staff %}Nobody else yet. Create accounts in Manage users.{% else %}No admin available.{% endif %}</li>
           {% endfor %}
         </ul>
       </div>

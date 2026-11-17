@@ -35,17 +35,36 @@ def _get_room_or_404(user, slug):
     return room
 
 
+def visible_people(user):
+    """Admins see everyone; normal users only see the admins."""
+    people = User.objects.filter(is_active=True).exclude(pk=user.pk)
+    if not user.is_staff:
+        people = people.filter(is_staff=True)
+    return people.order_by("-is_superuser", "username")
+
+
+def accessible_rooms(user):
+    """Every room this user is allowed to open (see Room.can_access)."""
+    candidates = Room.objects.filter(members=user).prefetch_related("members")
+    return [r for r in candidates if r.can_access(user)]
+
+
 def _sidebar_context(user):
     online = Presence.online_user_ids()
-    direct_rooms = (
-        Room.objects.filter(is_direct=True, members=user).prefetch_related("members").order_by("-created_at")
-    )
-    people = User.objects.filter(is_active=True).exclude(pk=user.pk).order_by("username")
+    direct_rooms = [
+        r for r in Room.objects.filter(is_direct=True, members=user).prefetch_related("members").order_by("-created_at")
+        if r.can_access(user)
+    ]
+    is_admin = user.is_staff
     return {
-        "public_rooms": Room.objects.filter(is_private=False),
-        "private_rooms": Room.objects.filter(is_private=True, is_direct=False, members=user),
+        "public_rooms": Room.objects.filter(is_private=False) if is_admin else Room.objects.none(),
+        "private_rooms": (
+            Room.objects.filter(is_private=True, is_direct=False, members=user) if is_admin else Room.objects.none()
+        ),
         "direct_rooms": [{"room": r, "name": r.display_name_for(user)} for r in direct_rooms],
-        "people": [{"user": p, "online": p.pk in online, "color": avatar_color(p.username)} for p in people],
+        "people": [
+            {"user": p, "online": p.pk in online, "color": avatar_color(p.username)} for p in visible_people(user)
+        ],
         "my_color": avatar_color(user.username),
     }
 
@@ -58,6 +77,17 @@ def _seen_id(room, user):
     if not other:
         return 0
     return ReadMarker.objects.filter(room=room, user=other).values_list("last_read_id", flat=True).first() or 0
+
+
+def _reply_target(request, room):
+    """The message being replied to, if any (must be in the same room)."""
+    try:
+        reply_id = int(request.POST.get("reply_to") or 0)
+    except ValueError:
+        return None
+    if not reply_id:
+        return None
+    return room.messages.filter(pk=reply_id, deleted_at__isnull=True).first()
 
 
 def _after_new_message(user, room, message):
@@ -162,6 +192,12 @@ def user_action(request, user_id):
         target.is_active = False
         target.save(update_fields=["is_active"])
         flash.info(request, f"{target.username} can no longer log in.")
+    elif action == "delete":
+        name = target.username
+        # Remove their private conversations too, then the account (and its messages).
+        Room.objects.filter(is_direct=True, members=target).delete()
+        target.delete()
+        flash.success(request, f"{name}'s account and messages were deleted.")
     elif action == "activate":
         target.is_active = True
         target.save(update_fields=["is_active"])
@@ -173,6 +209,12 @@ def user_action(request, user_id):
 
 @login_required
 def home(request):
+    if not request.user.is_staff:
+        # Normal users go straight to their chat with the admin.
+        admin = visible_people(request.user).first()
+        if admin:
+            return redirect("direct_message", username=admin.username)
+        return render(request, "chat/no_admin.html", _sidebar_context(request.user))
     room = Room.objects.filter(is_private=False).order_by("created_at").first()
     if room:
         return redirect("room", slug=room.slug)
@@ -185,7 +227,9 @@ def room_view(request, slug):
     if not room.is_private:
         room.members.add(request.user)  # joining a public room = becoming a member
 
-    recent = list(room.messages.select_related("user").order_by("-id")[: settings.CHAT_HISTORY_SIZE])[::-1]
+    recent = list(
+        room.messages.select_related("user", "reply_to__user").order_by("-id")[: settings.CHAT_HISTORY_SIZE]
+    )[::-1]
     if recent:
         ReadMarker.mark(request.user, room, recent[-1].id)
     Presence.touch(request.user)
@@ -224,6 +268,7 @@ def room_view(request, slug):
 
 
 @login_required
+@user_passes_test(lambda u: u.is_staff)
 def create_room(request):
     form = RoomForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -244,6 +289,8 @@ def direct_message(request, username):
     other = get_object_or_404(User, username=username, is_active=True)
     if other == request.user:
         return redirect("home")
+    if not request.user.is_staff and not other.is_staff:
+        raise Http404("You can only message the admin.")
     low, high = sorted([request.user.pk, other.pk])
     room, created = Room.objects.get_or_create(
         slug=f"dm-{low}-{high}",
@@ -291,7 +338,7 @@ def api_messages(request, slug):
         after = max(int(request.GET.get("after", 0)), 0)
     except ValueError:
         after = 0
-    new = list(room.messages.filter(id__gt=after).select_related("user").order_by("id")[:100])
+    new = list(room.messages.filter(id__gt=after).select_related("user", "reply_to__user").order_by("id")[:100])
     if new:
         ReadMarker.mark(request.user, room, new[-1].id)
     Presence.touch(request.user)
@@ -330,7 +377,10 @@ def api_send(request, slug):
         return JsonResponse(
             {"error": f"Message is too long (max {settings.CHAT_MAX_MESSAGE_LENGTH} characters)."}, status=400
         )
-    message = Message.objects.create(room=room, user=request.user, kind=kind, content=content)
+    message = Message.objects.create(
+        room=room, user=request.user, kind=kind, content=content,
+        reply_to=_reply_target(request, room) if kind == Message.TEXT else None,
+    )
     _after_new_message(request.user, room, message)
     return JsonResponse({"message": message.to_dict(request.user)}, status=201)
 
@@ -358,6 +408,7 @@ def api_upload(request, slug):
     message = Message(
         room=room, user=request.user, kind=kind, content="" if is_voice else caption,
         file_name=upload.name[:255], file_size=upload.size, mime=mime, duration=duration,
+        reply_to=_reply_target(request, room),
     )
     message.attachment.save(upload.name, upload, save=False)
     message.save()
@@ -390,7 +441,8 @@ def api_sidebar(request):
     Presence.touch(user)
     markers = dict(ReadMarker.objects.filter(user=user).values_list("room_id", "last_read_id"))
     rooms = []
-    for room in Room.objects.filter(members=user).prefetch_related("members"):
+    rooms_i_can_open = accessible_rooms(user)
+    for room in rooms_i_can_open:
         unread = (
             Message.objects.filter(room=room, id__gt=markers.get(room.id, 0), deleted_at__isnull=True)
             .exclude(user=user)
@@ -408,10 +460,10 @@ def api_sidebar(request):
             }
         )
     online = Presence.online_user_ids()
-    online_names = list(User.objects.filter(pk__in=online).values_list("username", flat=True))
+    online_names = list(visible_people(user).filter(pk__in=online).values_list("username", flat=True))
 
     # New messages from other people since ?since=<id>, used for desktop pop-up notifications.
-    my_messages = Message.objects.filter(room__members=user)
+    my_messages = Message.objects.filter(room__in=[r.pk for r in rooms_i_can_open])
     cursor = my_messages.aggregate(m=Max("id"))["m"] or 0
     latest = []
     try:
@@ -443,14 +495,7 @@ def api_sidebar(request):
 
 def _preview(message):
     """Short text for a notification, e.g. "📷 Photo" or the first words of a message."""
-    labels = {
-        Message.IMAGE: "📷 Photo", Message.VIDEO: "🎬 Video",
-        Message.VOICE: "🎤 Voice note", Message.FILE: "📄 " + (message.file_name or "File"),
-    }
-    if message.kind in labels:
-        text = labels[message.kind]
-        return f"{text}: {message.content[:80]}" if message.content else text
-    return message.content[:120] + ("…" if len(message.content) > 120 else "")
+    return message.preview_text()
 
 
 # ------------------------------------------------------------ calls API ---

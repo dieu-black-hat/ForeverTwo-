@@ -6,7 +6,7 @@
 <header class="chat-header">
   <button class="icon-btn only-mobile" type="button" data-open-sidebar aria-label="Open menu">{% icon "menu" %}</button>
   <div class="room-icon">{% icon "users" 18 %}</div>
-  <div class="chat-title"><h1>Manage users</h1><small class="muted">Only admins can see this page.</small></div>
+  <div class="chat-title"><h1>Manage users</h1><small class="muted">Only admins can see this page. Normal users only see the admins.</small></div>
 </header>
 
 <div class="page-body">
@@ -74,6 +74,10 @@
                 <input type="hidden" name="action" value="activate">
                 <button class="btn btn-ghost btn-sm" type="submit">Activate</button>
               {% endif %}
+            </form>
+            <form method="post" action="{% url 'user_action' row.user.pk %}" onsubmit="return confirm('Permanently delete {{ row.user.username }}? Their account, messages and conversations will be removed. This cannot be undone.');">
+              {% csrf_token %}<input type="hidden" name="action" value="delete">
+              <button class="btn btn-danger btn-sm" type="submit">Delete</button>
             </form>
           </div>
           {% endif %}

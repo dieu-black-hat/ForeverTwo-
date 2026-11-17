@@ -42,6 +42,13 @@
 <button class="new-pill" id="new-pill" type="button" hidden>New messages ↓</button>
 <div class="typing" id="typing" hidden><span class="typing-dots"><i></i><i></i><i></i></span><span id="typing-text"></span></div>
 
+<div class="reply-bar" id="reply-bar" hidden>
+  <div class="reply-bar-text">
+    <strong>Replying to <span id="reply-name"></span></strong>
+    <span id="reply-text"></span>
+  </div>
+  <button class="icon-btn" type="button" id="reply-cancel" title="Cancel reply" aria-label="Cancel reply">{% icon "x" 18 %}</button>
+</div>
 <form class="composer" id="composer" autocomplete="off">
   <input type="file" id="file-input" multiple hidden>
   <button class="composer-btn" type="button" id="attach-btn" title="Share photos, videos or files" aria-label="Attach files">{% icon "paperclip" %}</button>
@@ -58,7 +65,7 @@
     <button class="send-btn" type="button" id="rec-send" title="Send voice note" aria-label="Send voice note">{% icon "send" %}</button>
   </div>
 </form>
-<p class="composer-hint">Enter to send · Shift + Enter for a new line · Drag &amp; drop or paste to share files</p>
+<p class="composer-hint">Enter to send · Shift + Enter for a new line · Double-click a message to reply · Drag &amp; drop or paste files</p>
 
 <!-- Preview before sending files -->
 <div class="modal" id="upload-modal" hidden>

@@ -53,9 +53,22 @@ class Room(models.Model):
         return self.name
 
     def can_access(self, user):
-        if not self.is_private:
-            return True
-        return self.members.filter(pk=user.pk).exists()
+        """
+        Who may open this room?
+        - Admins: every public room, plus private rooms / DMs they belong to.
+        - Normal users: ONLY their direct messages with an admin.
+          (They never see other normal users or group rooms.)
+        """
+        if user.is_staff:
+            if not self.is_private:
+                return True
+            return self.members.filter(pk=user.pk).exists()
+        if not self.is_direct:
+            return False
+        members = list(self.members.all())
+        is_member = any(m.pk == user.pk for m in members)
+        talks_to_admin = any(m.is_staff and m.pk != user.pk for m in members)
+        return is_member and talks_to_admin
 
     def other_member(self, user):
         """For a direct message, the person you are talking to."""
@@ -104,12 +117,29 @@ class Message(models.Model):
     duration = models.PositiveIntegerField(default=0, help_text="Seconds (voice notes)")
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    reply_to = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="replies",
+        help_text="The message this one answers (like WhatsApp's reply).",
+    )
 
     class Meta:
         ordering = ["id"]
 
     def __str__(self):
         return f"{self.user}: [{self.kind}] {self.content[:40]}"
+
+    def preview_text(self, length=120):
+        """Short description, e.g. "📷 Photo" or the first words of a message."""
+        if self.deleted_at:
+            return "This message was deleted"
+        labels = {
+            self.IMAGE: "📷 Photo", self.VIDEO: "🎬 Video",
+            self.VOICE: "🎤 Voice note", self.FILE: "📄 " + (self.file_name or "File"),
+        }
+        if self.kind in labels:
+            text = labels[self.kind]
+            return f"{text}: {self.content[:80]}" if self.content else text
+        return self.content[:length] + ("…" if len(self.content) > length else "")
 
     def soft_delete(self):
         """'Delete for everyone': remove the content and file but keep a placeholder."""
@@ -134,6 +164,14 @@ class Message(models.Model):
         if self.deleted_at:
             data.update(kind="deleted", content="")
             return data
+        if self.reply_to_id and self.reply_to:
+            original = self.reply_to
+            data["reply"] = {
+                "id": original.id,
+                "user": original.user.username,
+                "text": original.preview_text(100),
+                "color": avatar_color(original.user.username),
+            }
         if self.attachment:
             data.update(
                 file_url=reverse("message_file", args=[self.id]),

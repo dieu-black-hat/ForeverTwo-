@@ -12,7 +12,9 @@ set -e
 cd "$(dirname "$0")"
 
 PROJECT_DIR="$(pwd)"
-DOMAIN="${USER}.pythonanywhere.com"
+# PythonAnywhere uses the lowercase username for the domain and WSGI file name.
+LOWER_USER="$(echo "$USER" | tr '[:upper:]' '[:lower:]')"
+DOMAIN="${LOWER_USER}.pythonanywhere.com"
 VENV="$HOME/.virtualenvs/forevertwo"
 WANTED="${1:-3.12}"
 
@@ -52,7 +54,7 @@ python manage.py migrate --no-input
 python manage.py collectstatic --no-input -v0
 
 echo "==> 5/5  Connecting the website"
-WSGI="/var/www/${USER}_pythonanywhere_com_wsgi.py"
+WSGI="/var/www/${LOWER_USER}_pythonanywhere_com_wsgi.py"
 if [ -f "$WSGI" ]; then
   cat > "$WSGI" <<EOF
 import os, sys

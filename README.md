@@ -11,6 +11,8 @@ your friends, classmates or team.
 - Public rooms, private rooms (invite only) and 1-to-1 **direct messages**
 - Live updates with no page refresh, plus a **"typing…"** indicator
 - **Seen ✓✓ / Sent ✓** receipts in direct messages
+- **Reply to a message** (like WhatsApp): hover or tap a message → ↩️, or double-click
+  it. The reply shows a quote; tap the quote to jump to the original message
 - **Delete for everyone** on your own messages
 - Unread badges, browser-tab unread count, and green **online** dots
 - Clickable links, date separators and grouping of back-to-back messages
@@ -33,7 +35,10 @@ your friends, classmates or team.
 - **Invite-only accounts**: no public sign-up. The admin (**Hustler**) creates every
   account on the **Manage users** page, then sends the login details by WhatsApp or
   copy-paste. New users must choose their own password at first login.
-- The admin can **reset a password** or **deactivate** someone; everyone can
+- **Private by design**: normal users only see the admin(s) and themselves, and can
+  only chat with an admin. They never see other users or group rooms. Admins see
+  everyone and can use the rooms.
+- The admin can **reset a password**, **deactivate** or **delete** someone; everyone can
   **change their own password** (🔑 icon)
 - 🔔 **Desktop pop-up notifications** (like WhatsApp Web) for new messages and
   incoming calls, with a notification sound
@@ -240,8 +245,9 @@ cd ~/ForeverTwo && git pull && bash pythonanywhere_setup.sh
 > A free account has about 512 MB of disk space, so delete old media in `/admin/`
 > if you run low.
 
-> Free accounts ask you to log in about once every 3 months and click
-> "Run until 3 months from today" to keep the site alive.
+> Free accounts must log in **once a month**: Web tab → click
+> **"Run until 1 month from today"**. PythonAnywhere emails you a reminder a
+> week before the site would be switched off.
 
 ### Option B — Render.com (deploys straight from GitHub)
 
@@ -278,8 +284,15 @@ cd ~/ForeverTwo && git pull && bash pythonanywhere_setup.sh
 4. Your friend opens the link, logs in, and must choose their own password.
    Even you won't know their new password.
 
-In the list of users you can also **Reset password** (if someone forgets it) or
-**Deactivate** an account (they can't log in any more, but their messages stay).
+In the list of users you can also **Reset password** (if someone forgets it),
+**Deactivate** an account (they can't log in any more, but their messages stay), or
+**Delete** it (the account, its messages and conversations are removed for good).
+
+**Who sees whom:** a normal user only sees the admin(s) in their sidebar and
+lands straight in their chat with the admin. They can't see or message other
+users, and group rooms are hidden from them. These rules are checked on the
+server (`Room.can_access` in `chat/models.py`), so typing a web address
+doesn't get around them.
 Tick *"Make this person an admin too"* to let someone else manage users.
 
 ---

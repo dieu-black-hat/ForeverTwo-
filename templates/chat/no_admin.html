@@ -1,0 +1,16 @@
+{% extends "chat/_layout.html" %}
+{% load chat_extras %}
+{% block title %}{{ SITE_NAME }}{% endblock %}
+{% block main %}
+<header class="chat-header">
+  <button class="icon-btn only-mobile" type="button" data-open-sidebar aria-label="Open menu">{% icon "menu" %}</button>
+  <div class="chat-title"><h1>{{ SITE_NAME }}</h1></div>
+</header>
+<div class="page-body">
+  <div class="card empty-state">
+    <div class="empty-emoji">🕊️</div>
+    <h2>No admin available right now</h2>
+    <p class="muted">You can only chat with the admin. Please try again later.</p>
+  </div>
+</div>
+{% endblock %}
