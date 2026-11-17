@@ -1,0 +1,86 @@
+{% extends "chat/_layout.html" %}
+{% load chat_extras %}
+{% block title %}Manage users · {{ SITE_NAME }}{% endblock %}
+
+{% block main %}
+<header class="chat-header">
+  <button class="icon-btn only-mobile" type="button" data-open-sidebar aria-label="Open menu">{% icon "menu" %}</button>
+  <div class="room-icon">{% icon "users" 18 %}</div>
+  <div class="chat-title"><h1>Manage users</h1><small class="muted">Only admins can see this page.</small></div>
+</header>
+
+<div class="page-body">
+  <div class="admin-grid">
+
+    {% if credentials %}
+    <section class="card credentials-card">
+      <div class="credentials-head">
+        <span class="credentials-check">✓</span>
+        <div>
+          <h2>{% if credentials.action == "reset" %}New password for {{ credentials.username }}{% else %}Account created for {{ credentials.username }}{% endif %}</h2>
+          <p class="muted">Send these details to {{ credentials.username }}. The password is shown <strong>only once</strong>.</p>
+        </div>
+      </div>
+      <dl class="cred-list">
+        <div><dt>Link</dt><dd>{{ login_url }}</dd></div>
+        <div><dt>Username</dt><dd>{{ credentials.username }}</dd></div>
+        <div><dt>Password</dt><dd class="cred-pass">{{ credentials.password }}</dd></div>
+      </dl>
+      <pre class="share-text" id="share-text">{{ share_text }}</pre>
+      <div class="form-actions">
+        <button class="btn btn-ghost" type="button" data-copy="share-text">{% icon "copy" 17 %} Copy message</button>
+        <a class="btn btn-primary" href="https://wa.me/?text={{ share_text|urlencode }}" target="_blank" rel="noopener">{% icon "share" 17 %} Send on WhatsApp</a>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <h2 class="card-title">{% icon "user-plus" 20 %} Create a new user</h2>
+      <form method="post" class="form" novalidate>
+        {% csrf_token %}
+        {% for field in form %}{% include "_field.html" %}{% endfor %}
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Create account</button></div>
+      </form>
+    </section>
+
+    <section class="card users-card">
+      <h2 class="card-title">{% icon "users" 20 %} All users <span class="count-pill">{{ users|length }}</span></h2>
+      <ul class="user-list">
+        {% for row in users %}
+        <li class="user-row{% if not row.user.is_active %} inactive{% endif %}">
+          <span class="avatar sm" style="background: {{ row.color }}">{{ row.user.username|initials }}<i class="dot{% if row.online %} online{% endif %}"></i></span>
+          <div class="user-info">
+            <strong>{{ row.user.username }}{% if row.user.pk == user.pk %} <small class="muted">(you)</small>{% endif %}</strong>
+            <div class="tags">
+              {% if row.user.is_superuser %}<span class="tag tag-owner">Owner</span>{% elif row.user.is_staff %}<span class="tag tag-admin">Admin</span>{% endif %}
+              {% if not row.user.is_active %}<span class="tag tag-off">Deactivated</span>
+              {% elif row.pending %}<span class="tag tag-wait">Hasn't logged in yet</span>
+              {% elif row.online %}<span class="tag tag-on">Online</span>
+              {% elif row.user.last_login %}<span class="tag">Last seen {{ row.user.last_login|timesince }} ago</span>{% endif %}
+            </div>
+          </div>
+          {% if not row.protected %}
+          <div class="user-actions">
+            <form method="post" action="{% url 'user_action' row.user.pk %}" onsubmit="return confirm('Create a new password for {{ row.user.username }}?');">
+              {% csrf_token %}<input type="hidden" name="action" value="reset">
+              <button class="btn btn-ghost btn-sm" type="submit">Reset password</button>
+            </form>
+            <form method="post" action="{% url 'user_action' row.user.pk %}">
+              {% csrf_token %}
+              {% if row.user.is_active %}
+                <input type="hidden" name="action" value="deactivate">
+                <button class="btn btn-ghost btn-sm danger-text" type="submit" onclick="return confirm('Stop {{ row.user.username }} from logging in?');">Deactivate</button>
+              {% else %}
+                <input type="hidden" name="action" value="activate">
+                <button class="btn btn-ghost btn-sm" type="submit">Activate</button>
+              {% endif %}
+            </form>
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+{% endblock %}

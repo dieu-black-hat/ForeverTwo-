@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% load static chat_extras %}
+{% block body_class %}app-page{% endblock %}
+{% block body %}
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <a class="brand" href="{% url 'home' %}"><span class="brand-mark">💬</span>{{ SITE_NAME }}</a>
+      <button class="icon-btn only-mobile" type="button" data-close-sidebar aria-label="Close menu">{% icon "x" %}</button>
+    </div>
+
+    <div class="sidebar-search">
+      <input type="search" id="sidebar-filter" placeholder="Search rooms and people…" autocomplete="off">
+    </div>
+
+    <div class="notify-banner" id="notify-banner" hidden>
+      <span>{% icon "bell" 18 %}</span>
+      <div><strong>Get message pop-ups</strong><small>Be notified like WhatsApp, even when this tab is in the background.</small></div>
+      <button type="button" class="btn btn-primary btn-sm" id="notify-enable">Turn on</button>
+      <button type="button" class="icon-btn small" id="notify-dismiss" aria-label="Not now">{% icon "x" 16 %}</button>
+    </div>
+
+    <nav class="sidebar-scroll">
+      {% if user.is_staff %}
+      <a class="nav-item manage-link{% if request.resolver_match.url_name == 'manage_users' %} active{% endif %}" href="{% url 'manage_users' %}">
+        {% icon "users" 18 %}<span class="nav-name">Manage users</span>
+      </a>
+      {% endif %}
+      <div class="section">
+        <div class="section-head">
+          <span>Rooms</span>
+          <a class="icon-btn small" href="{% url 'create_room' %}" title="Create a room" aria-label="Create a room">＋</a>
+        </div>
+        <ul class="nav-list" id="room-list">
+          {% for r in public_rooms %}
+            <li><a class="nav-item{% if room and room.pk == r.pk %} active{% endif %}" href="{% url 'room' r.slug %}" data-slug="{{ r.slug }}" data-filter="{{ r.name|lower }}">
+              <span class="hash">#</span><span class="nav-name">{{ r.name }}</span><span class="badge" hidden></span>
+            </a></li>
+          {% endfor %}
+          {% for r in private_rooms %}
+            <li><a class="nav-item{% if room and room.pk == r.pk %} active{% endif %}" href="{% url 'room' r.slug %}" data-slug="{{ r.slug }}" data-filter="{{ r.name|lower }}">
+              <span class="hash">🔒</span><span class="nav-name">{{ r.name }}</span><span class="badge" hidden></span>
+            </a></li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><span>Direct messages</span></div>
+        <ul class="nav-list" id="dm-list">
+          {% for d in direct_rooms %}
+            <li><a class="nav-item{% if room and room.pk == d.room.pk %} active{% endif %}" href="{% url 'room' d.room.slug %}" data-slug="{{ d.room.slug }}" data-filter="{{ d.name|lower }}">
+              <span class="avatar xs" style="background: {{ d.name|avatar_color }}">{{ d.name|initials }}</span>
+              <span class="nav-name">{{ d.name }}</span><span class="badge" hidden></span>
+            </a></li>
+          {% empty %}
+            <li class="nav-empty" id="dm-empty">No conversations yet. Pick someone below 👇</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><span>People</span><span class="count">{{ people|length }}</span></div>
+        <ul class="nav-list" id="people-list">
+          {% for p in people %}
+            <li><a class="nav-item" href="{% url 'direct_message' p.user.username %}" data-user="{{ p.user.username }}" data-filter="{{ p.user.username|lower }}" title="Message {{ p.user.username }}">
+              <span class="avatar xs" style="background: {{ p.color }}">{{ p.user.username|initials }}<i class="dot{% if p.online %} online{% endif %}"></i></span>
+              <span class="nav-name">{{ p.user.username }}</span>
+            </a></li>
+          {% empty %}
+            <li class="nav-empty">Nobody else yet — share the link with friends!</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </nav>
+
+    <div class="sidebar-me">
+      <span class="avatar sm" style="background: {{ my_color }}">{{ user.username|initials }}<i class="dot online"></i></span>
+      <div class="me-text">
+        <strong>{{ user.username }}</strong>
+        <small>Online</small>
+      </div>
+      <button class="icon-btn" type="button" id="notify-btn" title="Desktop notifications" aria-label="Desktop notifications" hidden>{% icon "bell" 19 %}</button>
+      <a class="icon-btn" href="{% url 'change_password' %}" title="Change my password" aria-label="Change my password">{% icon "key" 19 %}</a>
+      {% if user.is_staff %}<a class="icon-btn" href="{% url 'admin:index' %}" title="Django admin panel" aria-label="Django admin panel">{% icon "settings" 19 %}</a>{% endif %}
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button class="icon-btn" type="submit" title="Log out" aria-label="Log out">{% icon "logout" 19 %}</button>
+      </form>
+    </div>
+  </aside>
+  <div class="overlay" data-close-sidebar></div>
+
+  <main class="main">
+    {% block main %}{% endblock %}
+  </main>
+</div>
+
+<!-- Audio / video call screen (used by call.js) -->
+<div class="call-overlay" id="call-overlay" hidden>
+  <video id="call-remote" class="call-remote" autoplay playsinline></video>
+  <video id="call-local" class="call-local" autoplay playsinline muted hidden></video>
+  <div class="call-info">
+    <div class="call-avatar" id="call-avatar"></div>
+    <h2 id="call-peer"></h2>
+    <p id="call-status"></p>
+  </div>
+  <div class="call-actions" id="call-incoming" hidden>
+    <div class="call-action"><button class="call-btn red" type="button" id="call-decline" aria-label="Decline">{% icon "phone-off" 26 %}</button><span>Decline</span></div>
+    <div class="call-action"><button class="call-btn green" type="button" id="call-accept" aria-label="Accept">{% icon "phone" 26 %}</button><span>Accept</span></div>
+  </div>
+  <div class="call-actions" id="call-controls" hidden>
+    <div class="call-action"><button class="call-btn" type="button" id="call-mute" aria-label="Mute microphone">{% icon "mic" 24 %}</button><span id="call-mute-label">Mute</span></div>
+    <div class="call-action" id="call-camera-wrap"><button class="call-btn" type="button" id="call-camera" aria-label="Turn camera off">{% icon "video" 24 %}</button><span id="call-camera-label">Camera</span></div>
+    <div class="call-action"><button class="call-btn red" type="button" id="call-hangup" aria-label="End call">{% icon "phone-off" 26 %}</button><span>End</span></div>
+  </div>
+</div>
+{{ call_config|json_script:"call-config" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'chat/app.js' %}" defer></script>
+<script src="{% static 'chat/call.js' %}" defer></script>
+{% endblock %}

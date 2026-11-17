@@ -1,0 +1,88 @@
+{% extends "chat/_layout.html" %}
+{% load chat_extras %}
+{% block title %}{% if room.is_direct %}{{ room_title }}{% else %}#{{ room_title }}{% endif %} · {{ SITE_NAME }}{% endblock %}
+
+{% block main %}
+<header class="chat-header">
+  <button class="icon-btn only-mobile" type="button" data-open-sidebar aria-label="Open menu">{% icon "menu" %}</button>
+  {% if room.is_direct and other %}
+    <span class="avatar sm" style="background: {{ other_color }}">{{ other.username|initials }}<i class="dot" data-presence="{{ other.username }}"></i></span>
+    <div class="chat-title">
+      <h1>{{ room_title }}</h1>
+      <small class="muted" data-presence-text="{{ other.username }}">Direct message</small>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn header-btn" type="button" data-call="audio" data-room="{{ room.slug }}" data-peer="{{ other.username }}" data-color="{{ other_color }}" title="Audio call" aria-label="Start audio call">{% icon "phone" %}</button>
+      <button class="icon-btn header-btn" type="button" data-call="video" data-room="{{ room.slug }}" data-peer="{{ other.username }}" data-color="{{ other_color }}" title="Video call" aria-label="Start video call">{% icon "video" %}</button>
+    </div>
+  {% else %}
+    <div class="room-icon">{% if room.is_private %}🔒{% else %}#{% endif %}</div>
+    <div class="chat-title">
+      <h1>{{ room_title }}</h1>
+      <small class="muted">{% if room.description %}{{ room.description }} · {% endif %}{{ member_count }} member{{ member_count|pluralize }}</small>
+    </div>
+    {% if room.is_private %}
+    <form method="post" action="{% url 'leave_room' room.slug %}" class="header-actions" onsubmit="return confirm('Leave this room?');">
+      {% csrf_token %}
+      <button class="btn btn-ghost btn-sm" type="submit">Leave</button>
+    </form>
+    {% endif %}
+  {% endif %}
+</header>
+
+<section class="messages" id="messages" aria-live="polite">
+  <div class="empty-state" id="empty-state" hidden>
+    <div class="empty-emoji">👋</div>
+    <h2>No messages yet</h2>
+    <p class="muted">Say hello{% if room.is_direct and other %} to {{ other.username }}{% endif %}, share a photo or send a voice note!</p>
+  </div>
+</section>
+
+<div class="drop-zone" id="drop-zone" hidden><div>{% icon "upload" %}<p>Drop files to share them</p></div></div>
+<button class="new-pill" id="new-pill" type="button" hidden>New messages ↓</button>
+<div class="typing" id="typing" hidden><span class="typing-dots"><i></i><i></i><i></i></span><span id="typing-text"></span></div>
+
+<form class="composer" id="composer" autocomplete="off">
+  <input type="file" id="file-input" multiple hidden>
+  <button class="composer-btn" type="button" id="attach-btn" title="Share photos, videos or files" aria-label="Attach files">{% icon "paperclip" %}</button>
+  <textarea id="composer-input" name="content" rows="1" maxlength="{{ chat_config.maxLength }}"
+            placeholder="Message {% if room.is_direct %}{{ room_title }}{% else %}#{{ room_title }}{% endif %}"></textarea>
+  <button class="composer-btn" type="button" id="voice-btn" title="Record a voice note" aria-label="Record voice note">{% icon "mic" %}</button>
+  <button class="send-btn" type="submit" id="send-btn" aria-label="Send">{% icon "send" %}</button>
+
+  <div class="recorder" id="recorder" hidden>
+    <button class="composer-btn danger" type="button" id="rec-cancel" title="Cancel" aria-label="Cancel recording">{% icon "trash" %}</button>
+    <span class="rec-dot"></span>
+    <span class="rec-time" id="rec-time">0:00</span>
+    <span class="rec-label">Recording…</span>
+    <button class="send-btn" type="button" id="rec-send" title="Send voice note" aria-label="Send voice note">{% icon "send" %}</button>
+  </div>
+</form>
+<p class="composer-hint">Enter to send · Shift + Enter for a new line · Drag &amp; drop or paste to share files</p>
+
+<!-- Preview before sending files -->
+<div class="modal" id="upload-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head"><h2>Share <span id="upload-count"></span></h2><button class="icon-btn" type="button" data-close-upload aria-label="Close">{% icon "x" %}</button></div>
+    <div class="upload-previews" id="upload-previews"></div>
+    <input type="text" id="upload-caption" class="caption-input" placeholder="Add a caption… (optional)" maxlength="{{ chat_config.maxLength }}">
+    <div class="form-actions">
+      <button class="btn btn-ghost" type="button" data-close-upload>Cancel</button>
+      <button class="btn btn-primary" type="button" id="upload-send">{% icon "send" %} Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- Full-screen photo viewer -->
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lightbox-bar">
+    <span id="lightbox-name"></span>
+    <a class="icon-btn" id="lightbox-download" href="#" title="Download" aria-label="Download">{% icon "download" %}</a>
+    <button class="icon-btn" type="button" id="lightbox-close" title="Close" aria-label="Close">{% icon "x" %}</button>
+  </div>
+  <img id="lightbox-img" alt="">
+</div>
+
+{{ chat_config|json_script:"chat-config" }}
+{{ initial_messages|json_script:"initial-messages" }}
+{% endblock %}

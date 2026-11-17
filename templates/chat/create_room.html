@@ -1,0 +1,21 @@
+{% extends "chat/_layout.html" %}
+{% load chat_extras %}
+{% block title %}New room · {{ SITE_NAME }}{% endblock %}
+
+{% block main %}
+<header class="chat-header">
+  <button class="icon-btn only-mobile" type="button" data-open-sidebar aria-label="Open menu">{% icon "menu" %}</button>
+  <div class="chat-title"><h1>Create a room</h1><small class="muted">Rooms are where groups talk.</small></div>
+</header>
+
+<div class="page-body">
+  <form method="post" class="form card" novalidate>
+    {% csrf_token %}
+    {% for field in form %}{% include "_field.html" %}{% endfor %}
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="{% url 'home' %}">Cancel</a>
+      <button class="btn btn-primary" type="submit">Create room</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
