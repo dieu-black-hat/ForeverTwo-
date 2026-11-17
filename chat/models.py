@@ -100,10 +100,10 @@ def attachment_path(instance, filename):
 
 
 class Message(models.Model):
-    TEXT, IMAGE, VIDEO, FILE, VOICE, CALL = "text", "image", "video", "file", "voice", "call"
+    TEXT, IMAGE, VIDEO, FILE, VOICE, CALL, STICKER = "text", "image", "video", "file", "voice", "call", "sticker"
     KIND_CHOICES = [
-        (TEXT, "Text"), (IMAGE, "Photo"), (VIDEO, "Video"),
-        (FILE, "File"), (VOICE, "Voice note"), (CALL, "Call record"),
+        (TEXT, "Text"), (IMAGE, "Photo"), (VIDEO, "Video"), (FILE, "File"),
+        (VOICE, "Voice note"), (CALL, "Call record"), (STICKER, "Sticker"),
     ]
 
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="messages")
@@ -136,6 +136,8 @@ class Message(models.Model):
             self.IMAGE: "📷 Photo", self.VIDEO: "🎬 Video",
             self.VOICE: "🎤 Voice note", self.FILE: "📄 " + (self.file_name or "File"),
         }
+        if self.kind == self.STICKER:
+            return "🎨 Sticker"
         if self.kind in labels:
             text = labels[self.kind]
             return f"{text}: {self.content[:80]}" if self.content else text

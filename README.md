@@ -13,6 +13,8 @@ your friends, classmates or team.
 - **Seen ✓✓ / Sent ✓** receipts in direct messages
 - **Reply to a message** (like WhatsApp): hover or tap a message → ↩️, or double-click
   it. The reply shows a quote; tap the quote to jump to the original message
+- 🎨 **Stickers & emoji**: tap 😊 in the message box. 26 original stickers (faces,
+  hugs 🤗, and words like *Muraho!*, *Murakoze!*, *Ndagukunda*), plus an emoji tab
 - **Delete for everyone** on your own messages
 - Unread badges, browser-tab unread count, and green **online** dots
 - Clickable links, date separators and grouping of back-to-back messages
@@ -68,6 +70,7 @@ ForeverTwo/
 ├── chat/                  ← the APP: the chat itself
 │   ├── models.py          ← database tables: Room, Message, ReadMarker, Presence, Typing, CallSignal
 │   ├── media.py           ← checks uploaded files and sends them (with video seeking)
+│   ├── stickers.py        ← the list of stickers (code + name)
 │   ├── views.py           ← Python functions that answer each page / API request
 │   ├── urls.py            ← which web address goes to which view
 │   ├── forms.py           ← sign-up form and create-room form
@@ -82,7 +85,8 @@ ForeverTwo/
 │
 └── static/chat/
     ├── style.css          ← all the design (colours, layout, dark mode, mobile, call screen)
-    ├── app.js             ← live chat, file sharing, voice notes, typing, "Seen"
+    ├── app.js             ← live chat, file sharing, voice notes, stickers, replies
+    ├── stickers/          ← the sticker pictures (SVG), drawn by tools/make_stickers.py
     └── call.js            ← audio & video calls (WebRTC)
 ```
 
@@ -352,6 +356,17 @@ jump straight to that chat.
 | Max message length / history size | bottom of `chatproject/settings.py` |
 | Default rooms | `chat/migrations/0002_default_rooms.py`, or create them in `/admin/` |
 | How often it checks for messages | `setTimeout(poll, … 2000)` in `static/chat/app.js` |
+
+## 🎨 Make your own stickers
+
+The stickers are drawn **with code** in `tools/make_stickers.py`: circles,
+curves and text in SVG format. To add one:
+
+1. Copy one of the drawing functions (e.g. `happy()`) and change it, or add a
+   new word to the `TEXTS` list (e.g. `"mwiriwe": ("Mwiriwe!", 36, "#fde68a", "#d97706", "")`).
+2. Run `python tools/make_stickers.py`. It writes the `.svg` files into `static/chat/stickers/`.
+3. Add the code and a name to `STICKERS` in `chat/stickers.py`.
+4. Push and update the site as usual.
 
 ## 🚀 Ideas for the next version (good practice!)
 

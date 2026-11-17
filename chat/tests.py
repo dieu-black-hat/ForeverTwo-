@@ -374,3 +374,38 @@ class ReplyTests(TestCase):
         data = self.client.get(reverse("api_messages", args=[self.dm.slug]), {"after": 0}).json()
         quoted = [m for m in data["messages"] if m["id"] == reply["id"]][0]["reply"]
         self.assertEqual(quoted["text"], "This message was deleted")
+
+
+# ------------------------------------------------------------- stickers ---
+class StickerTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.get(username=dj_settings.DEFAULT_ADMIN_USERNAME)
+        self.grace = User.objects.create_user("grace", password="x-strong-pass-1")
+        self.client.force_login(self.grace)
+        self.client.get(reverse("direct_message", args=[self.admin.username]))
+        self.dm = Room.objects.get(is_direct=True)
+        self.url = reverse("api_send", args=[self.dm.slug])
+
+    def test_send_sticker(self):
+        res = self.client.post(self.url, {"kind": "sticker", "content": "murakoze"})
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json()["message"]["kind"], "sticker")
+        self.assertEqual(Message.objects.get().preview_text(), "🎨 Sticker")
+
+    def test_unknown_sticker_rejected(self):
+        res = self.client.post(self.url, {"kind": "sticker", "content": "../../etc/passwd"})
+        self.assertEqual(res.status_code, 400)
+
+    def test_sticker_as_reply_and_files_exist(self):
+        from pathlib import Path
+        from .stickers import STICKERS
+        first = self.client.post(self.url, {"content": "Thanks for the notes"}).json()["message"]
+        res = self.client.post(self.url, {"kind": "sticker", "content": "ok", "reply_to": first["id"]}).json()
+        self.assertEqual(res["message"]["reply"]["id"], first["id"])
+        folder = Path(dj_settings.BASE_DIR) / "static" / "chat" / "stickers"
+        for code, _ in STICKERS:
+            self.assertTrue((folder / f"{code}.svg").exists(), code)
+
+    def test_picker_data_on_page(self):
+        page = self.client.get(reverse("room", args=[self.dm.slug]))
+        self.assertEqual(len(page.context["chat_config"]["stickers"]), 26)

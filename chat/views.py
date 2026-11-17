@@ -22,6 +22,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .forms import CreateUserForm, RoomForm, generate_password
 from .media import UploadError, classify_upload, ranged_file_response
+from .stickers import STICKER_CODES, sticker_list
 from .models import CallSignal, Message, Presence, Profile, ReadMarker, Room, Typing, avatar_color
 
 User = get_user_model()
@@ -255,6 +256,7 @@ def room_view(request, slug):
                 "seenId": _seen_id(room, request.user),
                 "maxLength": settings.CHAT_MAX_MESSAGE_LENGTH,
                 "maxVoiceSeconds": settings.CHAT_MAX_VOICE_SECONDS,
+                "stickers": sticker_list(),
                 "limitsMb": {
                     "image": settings.CHAT_MAX_IMAGE_MB,
                     "video": settings.CHAT_MAX_VIDEO_MB,
@@ -369,8 +371,10 @@ def api_send(request, slug):
     room = _get_room_or_404(request.user, slug)
     content = request.POST.get("content", "").strip()
     kind = request.POST.get("kind", Message.TEXT)
-    if kind not in (Message.TEXT, Message.CALL) or (kind == Message.CALL and not room.is_direct):
+    if kind not in (Message.TEXT, Message.CALL, Message.STICKER) or (kind == Message.CALL and not room.is_direct):
         return JsonResponse({"error": "Invalid message type."}, status=400)
+    if kind == Message.STICKER and content not in STICKER_CODES:
+        return JsonResponse({"error": "Unknown sticker."}, status=400)
     if not content:
         return JsonResponse({"error": "Message is empty."}, status=400)
     if len(content) > (100 if kind == Message.CALL else settings.CHAT_MAX_MESSAGE_LENGTH):
@@ -379,7 +383,7 @@ def api_send(request, slug):
         )
     message = Message.objects.create(
         room=room, user=request.user, kind=kind, content=content,
-        reply_to=_reply_target(request, room) if kind == Message.TEXT else None,
+        reply_to=_reply_target(request, room) if kind in (Message.TEXT, Message.STICKER) else None,
     )
     _after_new_message(request.user, room, message)
     return JsonResponse({"message": message.to_dict(request.user)}, status=201)

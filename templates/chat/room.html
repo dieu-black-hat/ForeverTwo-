@@ -42,6 +42,15 @@
 <button class="new-pill" id="new-pill" type="button" hidden>New messages ↓</button>
 <div class="typing" id="typing" hidden><span class="typing-dots"><i></i><i></i><i></i></span><span id="typing-text"></span></div>
 
+<div class="sticker-panel" id="sticker-panel" hidden>
+  <div class="sticker-tabs" role="tablist">
+    <button type="button" class="sticker-tab active" data-tab="stickers" role="tab">Stickers</button>
+    <button type="button" class="sticker-tab" data-tab="emoji" role="tab">Emoji</button>
+  </div>
+  <div class="sticker-grid" id="sticker-grid" data-pane="stickers"></div>
+  <div class="emoji-grid" id="emoji-grid" data-pane="emoji" hidden></div>
+</div>
+
 <div class="reply-bar" id="reply-bar" hidden>
   <div class="reply-bar-text">
     <strong>Replying to <span id="reply-name"></span></strong>
@@ -52,6 +61,7 @@
 <form class="composer" id="composer" autocomplete="off">
   <input type="file" id="file-input" multiple hidden>
   <button class="composer-btn" type="button" id="attach-btn" title="Share photos, videos or files" aria-label="Attach files">{% icon "paperclip" %}</button>
+  <button class="composer-btn" type="button" id="sticker-btn" title="Stickers and emoji" aria-label="Stickers and emoji" aria-expanded="false">{% icon "smile" %}</button>
   <textarea id="composer-input" name="content" rows="1" maxlength="{{ chat_config.maxLength }}"
             placeholder="Message {% if room.is_direct %}{{ room_title }}{% else %}#{{ room_title }}{% endif %}"></textarea>
   <button class="composer-btn" type="button" id="voice-btn" title="Record a voice note" aria-label="Record voice note">{% icon "mic" %}</button>

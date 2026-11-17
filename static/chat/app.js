@@ -369,6 +369,9 @@
   const csrf = function () { return getCookie("csrftoken"); };
 
   const rows = new Map(); // message id → row element
+  const stickerUrls = {};
+  const stickerLabels = {};
+  (chat.stickers || []).forEach(function (st) { stickerUrls[st.code] = st.url; stickerLabels[st.code] = st.label; });
   const messagesById = new Map(); // message id → message data (used for replies)
   let lastId = 0;
   let lastMsg = null;
@@ -473,6 +476,17 @@
     if (m.kind === "deleted") {
       bubble.classList.add("deleted");
       bubble.append(icon("ban", 15), document.createTextNode(m.is_mine ? " You deleted this message" : " This message was deleted"));
+      return bubble;
+    }
+    if (m.kind === "sticker") {
+      bubble.classList.add("sticker-bubble");
+      const img = document.createElement("img");
+      img.className = "sticker-img";
+      img.src = stickerUrls[m.content] || "";
+      img.alt = stickerLabels[m.content] || "Sticker";
+      img.title = img.alt;
+      img.addEventListener("load", keepPinned);
+      bubble.appendChild(img);
       return bubble;
     }
     if (m.kind === "image") {
@@ -722,6 +736,7 @@
 
   function previewOf(m) {
     const labels = { image: "📷 Photo", video: "🎬 Video", voice: "🎤 Voice note", file: "📄 " + (m.file_name || "File") };
+    if (m.kind === "sticker") return "🎨 Sticker";
     if (labels[m.kind]) return m.content ? labels[m.kind] + ": " + m.content : labels[m.kind];
     return m.content;
   }
@@ -807,6 +822,82 @@
     if (row && !row.classList.contains("pending") && !e.target.closest("a, button, video, img")) {
       row.classList.toggle("show-actions");
     }
+  });
+
+  // ===================================================== stickers & emoji ==
+  const stickerBtn = document.getElementById("sticker-btn");
+  const stickerPanel = document.getElementById("sticker-panel");
+  const stickerGrid = document.getElementById("sticker-grid");
+  const emojiGrid = document.getElementById("emoji-grid");
+  const EMOJI = (
+    "😀 😁 😂 🤣 😊 😍 🥰 😘 😎 🤩 🥳 😇 🙂 😉 😜 🤗 🤔 🙄 😴 😢 😭 😡 😱 🤯 " +
+    "👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 👌 ❤️ 🧡 💛 💚 💙 💜 💔 🔥 ✨ 🎉 🎂 🌹 ☕ 📚 ✅ ❌ 💯 🇷🇼"
+  ).split(" ");
+
+  async function sendSticker(code) {
+    closeStickers();
+    const body = new FormData();
+    body.append("kind", "sticker");
+    body.append("content", code);
+    if (replyTo) body.append("reply_to", String(replyTo.id));
+    try {
+      const res = await fetch(chat.sendUrl, { method: "POST", body: body, headers: { "X-CSRFToken": csrf() } });
+      const data = await res.json().catch(function () { return {}; });
+      if (res.ok) { messageArrived(data.message); cancelReply(); }
+      else toast(data.error || "Could not send the sticker.", "error");
+    } catch (e) {
+      toast("You seem to be offline. Sticker not sent.", "error");
+    }
+  }
+
+  function insertEmoji(emoji) {
+    // Put the emoji where the cursor is in the message box.
+    const start = input.selectionStart || input.value.length;
+    const end = input.selectionEnd || input.value.length;
+    input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+    input.selectionStart = input.selectionEnd = start + emoji.length;
+    input.focus();
+    autoresize();
+  }
+
+  function buildPicker() {
+    (chat.stickers || []).forEach(function (st) {
+      const b = el("button", "sticker-choice");
+      b.type = "button";
+      b.title = st.label;
+      b.setAttribute("aria-label", "Send sticker: " + st.label);
+      const img = document.createElement("img");
+      img.src = st.url;
+      img.alt = st.label;
+      img.loading = "lazy";
+      b.appendChild(img);
+      b.addEventListener("click", function () { sendSticker(st.code); });
+      stickerGrid.appendChild(b);
+    });
+    EMOJI.forEach(function (emo) {
+      const b = el("button", "emoji-choice", emo);
+      b.type = "button";
+      b.addEventListener("click", function () { insertEmoji(emo); });
+      emojiGrid.appendChild(b);
+    });
+  }
+  buildPicker();
+
+  function openStickers() { stickerPanel.hidden = false; stickerBtn.setAttribute("aria-expanded", "true"); stickerBtn.classList.add("active"); }
+  function closeStickers() { stickerPanel.hidden = true; stickerBtn.setAttribute("aria-expanded", "false"); stickerBtn.classList.remove("active"); }
+  stickerBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (stickerPanel.hidden) openStickers(); else closeStickers();
+  });
+  stickerPanel.querySelectorAll(".sticker-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      stickerPanel.querySelectorAll(".sticker-tab").forEach(function (t) { t.classList.toggle("active", t === tab); });
+      stickerGrid.hidden = tab.dataset.tab !== "stickers";
+      emojiGrid.hidden = tab.dataset.tab !== "emoji";
+    });
+  });
+  document.addEventListener("click", function (e) {
+    if (!stickerPanel.hidden && !stickerPanel.contains(e.target) && e.target !== stickerBtn) closeStickers();
   });
 
   // ============================================== photo / video / files ==
@@ -1007,6 +1098,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (!lightbox.hidden) closeLightbox();
+    else if (!stickerPanel.hidden) closeStickers();
     else if (!modal.hidden) closeUpload();
     else if (replyTo) cancelReply();
   });
